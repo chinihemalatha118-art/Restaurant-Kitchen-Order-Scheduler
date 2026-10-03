@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Restaurant Kitchen Order Scheduler</title>
+<style>
+:root{--bg:#0f172a;--card:#111c32;--card2:#16233d;--text:#e5e7eb;--muted:#94a3b8;--accent:#f59e0b;--green:#22c55e;--red:#ef4444;--blue:#38bdf8}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:linear-gradient(135deg,#0b1220,#172554);color:var(--text)}
+.container{max-width:1200px;margin:auto;padding:28px}
+header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:24px;flex-wrap:wrap}
+h1{margin:0;font-size:30px} .subtitle{color:var(--muted);margin-top:6px}
+.badge{background:#3b2a08;color:#fbbf24;padding:9px 13px;border-radius:999px;font-size:13px}
+.grid{display:grid;grid-template-columns:350px 1fr;gap:20px}
+.card{background:rgba(17,28,50,.94);border:1px solid #263652;border-radius:16px;padding:20px;box-shadow:0 12px 30px #0003}
+h2{font-size:18px;margin:0 0 16px}
+label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+input,select{width:100%;padding:11px;border:1px solid #334155;border-radius:9px;background:#0b1426;color:white;outline:none}
+input:focus,select:focus{border-color:var(--blue)}
+button{border:0;border-radius:9px;padding:11px 15px;font-weight:700;cursor:pointer}
+.primary{background:var(--accent);color:#17100a;width:100%;margin-top:16px}
+.secondary{background:#24334f;color:white}.danger{background:#3a1720;color:#fecaca}
+.actions{display:flex;gap:8px;margin-top:12px}.actions button{flex:1}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.stat{background:var(--card2);border-radius:12px;padding:14px}.stat small{color:var(--muted)}.stat strong{display:block;font-size:24px;margin-top:5px}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{padding:12px 10px;border-bottom:1px solid #263652;text-align:left;font-size:14px}th{color:#93c5fd;font-weight:700}
+.status{padding:5px 8px;border-radius:999px;font-size:12px;font-weight:700}.on{background:#12351f;color:#86efac}.late{background:#401b1b;color:#fca5a5}
+.queue{margin-top:20px}.order-card{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#101c31;border:1px solid #263652;padding:12px;border-radius:10px;margin:8px 0}
+.order-card small{color:var(--muted)}.priority{color:#fbbf24;font-weight:700}
+.timeline{margin-top:20px}.bar{height:34px;background:#0b1426;border-radius:9px;overflow:hidden;display:flex;margin-top:10px}.seg{height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border-right:2px solid #0b1426;min-width:25px}.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;color:var(--muted);font-size:12px}
+.note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:12px}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+<div><h1>🍽️ Kitchen Order Scheduler</h1><div class="subtitle">Priority Queue • Greedy • Job Sequencing</div></div>
+<div class="badge">DAA Interactive Prototype</div>
+</header>
+
+<div class="grid">
+<section class="card">
+<h2>➕ Add Kitchen Order</h2>
+<label>Order ID</label><input id="oid" placeholder="e.g. O6">
+<label>Customer / Item</label><input id="item" placeholder="e.g. Chicken Biryani">
+<label>Preparation Time (min)</label><input id="prep" type="number" min="1" value="10">
+<label>Urgency (1–10)</label><input id="urg" type="number" min="1" max="10" value="7">
+<label>Promised Delivery / Deadline (min)</label><input id="deadline" type="number" min="1" value="25">
+<button class="primary" onclick="addOrder()">Add Order</button>
+<div class="actions"><button class="secondary" onclick="loadDemo()">Load Demo</button><button class="danger" onclick="clearAll()">Clear</button></div>
+<p class="note">Priority rule: urgency is weighted strongly, while earlier deadlines and shorter preparation times improve the score.</p>
+</section>
+
+<section>
+<div class="stats">
+<div class="stat"><small>Total Orders</small><strong id="total">0</strong></div>
+<div class="stat"><small>On Time</small><strong id="ontime">0</strong></div>
+<div class="stat"><small>Delayed</small><strong id="delayed">0</strong></div>
+<div class="stat"><small>Total Delay</small><strong id="delay">0m</strong></div>
+</div>
+
+<div class="card">
+<h2>📋 Optimized Kitchen Schedule</h2>
+<div class="table-wrap"><table><thead><tr><th>Order</th><th>Item</th><th>Priority</th><th>Start</th><th>Finish</th><th>Deadline</th><th>Status</th></tr></thead>
+<tbody id="schedule"></tbody></table></div>
+<div class="timeline"><h2>⏱️ Kitchen Timeline</h2><div id="bar" class="bar"></div><div id="legend" class="legend"></div></div>
+</div>
+
+<div class="card queue">
+<h2>🧠 Algorithm Decision Log</h2>
+<div id="log"></div>
+</div>
+</section>
+</div>
+</div>
+
+<script>
+let orders=[];
+const colors=["#f59e0b","#38bdf8","#a78bfa","#34d399","#fb7185","#f97316","#2dd4bf","#818cf8"];
+
+function score(o){
+  // Explicit priority rule: urgency*10 + deadline advantage - prep penalty.
+  return o.urgency*10 + Math.max(0,50-o.deadline)*0.5 - o.prep*0.8;
+}
+function addOrder(){
+  const id=document.getElementById("oid").value.trim() || "O"+(orders.length+1);
+  const item=document.getElementById("item").value.trim() || "Kitchen Order";
+  const prep=+document.getElementById("prep").value, urgency=+document.getElementById("urg").value, deadline=+document.getElementById("deadline").value;
+  if(prep<1||urgency<1||urgency>10||deadline<1){alert("Please enter valid values.");return}
+  orders.push({id,item,prep,urgency,deadline});
+  document.getElementById("oid").value="";document.getElementById("item").value="";
+  render();
+}
+function schedule(){
+  // Greedy + priority queue simulation: repeatedly choose the highest score among pending orders.
+  let pending=orders.map(o=>({...o,priority:score(o)})), t=0, result=[], log=[];
+  while(pending.length){
+    pending.sort((a,b)=>b.priority-a.priority);
+    const o=pending.shift(), start=t, finish=t+o.prep, delay=Math.max(0,finish-o.deadline);
+    result.push({...o,start,finish,delay});
+    log.push(`At ${start} min, selected <b>${o.id}</b> (${o.item}) because its priority score is <b>${o.priority.toFixed(1)}</b>. Preparation: ${o.prep} min; deadline: ${o.deadline} min.`);
+    t=finish;
+  }
+  return {result,log};
+}
+function render(){
+  const {result,log}=schedule();
+  let on=result.filter(x=>!x.delay).length, late=result.length-on, delay=result.reduce((s,x)=>s+x.delay,0);
+  total.textContent=result.length;ontime.textContent=on;delayed.textContent=late;document.getElementById("delay").textContent=delay+"m";
+  schedule.innerHTML=result.map(x=>`<tr><td><b>${x.id}</b></td><td>${x.item}</td><td class="priority">${x.priority.toFixed(1)}</td><td>${x.start}m</td><td>${x.finish}m</td><td>${x.deadline}m</td><td><span class="status ${x.delay?'late':'on'}">${x.delay?'Delayed +'+x.delay+'m':'On Time'}</span></td></tr>`).join("");
+  document.getElementById("log").innerHTML=log.length?log.map((x,i)=>`<div class="order-card"><div><b>Step ${i+1}</b><br><small>${x}</small></div></div>`).join(""):`<div class="note">Add orders to see algorithm decisions.</div>`;
+  const totalTime=result.reduce((s,x)=>s+x.prep,0)||1;
+  document.getElementById("bar").innerHTML=result.map((x,i)=>`<div class="seg" title="${x.id}: ${x.prep} min" style="width:${x.prep/totalTime*100}%;background:${colors[i%colors.length]}">${x.id}</div>`).join("");
+  document.getElementById("legend").innerHTML=result.map((x,i)=>`<span>■ ${x.id} = ${x.prep} min</span>`).join("");
+}
+function loadDemo(){
+  orders=[
+    {id:"O1",item:"Chicken Biryani",prep:10,urgency:8,deadline:20},
+    {id:"O2",item:"Veg Fried Rice",prep:5,urgency:5,deadline:15},
+    {id:"O3",item:"Pizza",prep:15,urgency:10,deadline:30},
+    {id:"O4",item:"Paneer Tikka",prep:8,urgency:7,deadline:25},
+    {id:"O5",item:"Burger",prep:6,urgency:6,deadline:18}
+  ];render();
+}
+function clearAll(){orders=[];render()}
+loadDemo();
+</script>
+</body>
+</html>
